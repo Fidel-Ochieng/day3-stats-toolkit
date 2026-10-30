@@ -1,0 +1,23 @@
+=== Statistics report: daily_deposits_kes===
+Rows read             : 40
+Valid Values          : 35
+Rejected values       : 5
+  row 6: '' (missing value)
+  row 9: '-' (placeholder, not a number)
+  row 13: 'n/a' (placeholder, not a number)
+  row 24: '12,40O' (not a valid number)
+  row 28: '' (missing value)
+
+                    all data                  outliers removed
+count               35                        31
+mean                22,400.00                 18,349.65
+median              18,805.47                 18,506.72
+mode                none                      none
+variance (sample)   328,019,873.36            10,116,378.52
+std dev (sample)    18,111.32                 3,180.63
+min / max           1,200.00 / 96,500.00      12,772.70 / 26,725.69
+Q1 / Q3             15,998.40 / 20,977.21     15,998.40 / 20,730.60
+IQR                 4,978.81                  4,732.20
+
+Outlier fences   :lower 8,530.19, upper 28,445.41
+Outliers    :96,500.00(2026-09-20, AG-104), 1,200.00(2026-10-02, AG-104), 88,400.00(2026-10-06, AG-104), 29,060.99(2026-10-07, AG-101)
