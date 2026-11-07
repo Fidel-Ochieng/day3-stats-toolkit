@@ -1,72 +1,45 @@
-&#x09;Day 3: Statistics Toolkit 
+Day 3: Statistical Amalysis Toolkit 
+        OVERVIEW
+This project looks at the daily deposits in KES of mobile-money agents and works out simple statistics about them. it finds unusual values (outliess), rejected bad data and answers against NumPy.
 
-Overview 
+        FILES 
+stats_toolkit.py
+tests_stats_toolkit.py
+data/agent_deposits.csv
+output/stats_report.txt
+requirements,txt
 
-A python project that analyses daily agents deposits in (KES). 
+        REQUIREMENTS
+python 3.1
+NumPy (only check results)
+pytest (optionsl)
+--install using pip install -r requirements.txt
 
-&#x20;It :   calculates descriptive statistics
+        APPROACH
+Load the deposits column from the csv file.
+Reject misssing and invalid values, keeping reasons for each.
+Calculate the mean, median, mode, variance and std deviation.
+Calculate the quartiles and the IQR.
+Find outliers with the IQR rile.
+Show all data and outliers-trmoved side by side.
+Check results against NumPy.
 
-&#x09; outliers,
+        MY CHOICES
+I used sample formula, which divides by n - 1. the 40 days are only a small part of what the agents do over time, so the data is a sample.
+I also used linear interpolation. For n sorted values, the quartile for a fraction p is at position (n - 1) * p, counting from 0. If that position falls between two values, I takke a point betweeen them.
 
-&#x09; clean invalid data 
+        RESULTS
+    40 rows were read 
+    35 rows were valid
+    5 rows were rejected (rows: 6, 9, 13, 24 and 28)
 
-&#x09; compares its results with NumPy 
+The outlier fences are 8,530.19 and 28,445.41. There are four outliers:
+    96,500.00 (2026-09-20, AG-104)
+    1,200.00 (2026-10-02, AG-104)
+    88,400.00 (2026-10-06, AG-104)
+    29060.99 (2026-10-07, AG-104)
 
+The outliers puth the mean up and make the standard deviation much larger. 
 
-
-Approach 
-
-1. Load data from a csv file.
-2. Handled missing and invalid values.
-3. Calculated mean, median mode, variance, and standard deviation.
-4. Calculated quartiles and interquartile range (IQR)
-5. Detected outliers using the IQR method.
-6. Compared statistical results with NumPy.
-7. Saved the statistics report to a text file.
-
-
-
-Requirements
-
-Python 3.10 or latest 
-
-NumPy 
-
-
-
-Installation 
-
-install NumPy using: 
-
-&#x20;pip install -r requirement.txt 
-
-
-
-Key Findings 
-
-1.Data processed: 40 rows were read
-
-&#x09;	  35 valid values
-
-&#x09;	  5 rejected entries
-
-2.Average deposit: KES22,400.00
-
-3.Median deposit: KES18,805.47
-
-4.Outliers detected: 4 unusual deposit values were identified using the IQR method
-
-5.Cleaned data: Removing the outliers left 31 values, with an average deposit of KES 18,349.65
-
-6.Data validation: Missing values and invalid entries were rejected.
-
-7.Verification: The calculated statistical results matched NumPy's results
-
-
-
-
-
-
-
-
-
+        CHECKING WITH NUMPY
+compare_with_numpy() recalculates the mean, median, variance, standard deviation and quartiles with NumPy. All the five resilts match mine.

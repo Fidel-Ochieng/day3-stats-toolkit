@@ -13,6 +13,24 @@ from pathlib import Path
 DATA_PATH = Path("data") / "agent_deposits.csv"
 
 
+def rejection_reason(raw: str) -> str | None:
+    """Return why this raw text is not a valid deposit, or None if it is valid."""
+    text = (raw or "").strip()
+    if text == "":
+        return "missing value"
+    if text.lower() in ("-", "--", "n/a", "na", "null" "none"):
+        return "placeholder, not a number"
+    try:
+        number = float(text)
+    except ValueError:
+        return "not a valid number"
+    if not math.isfinite(number):
+        return "not a finite number"
+    if number < 0:
+        return "negative value"
+    return None
+
+
 def load_column(path: Path, column: str) -> tuple[list[float], list[tuple[int, str]]]:
     """Return (valid_values, rejected) where rejected holds (row_number, raw_value) pairs."""
 
@@ -20,27 +38,24 @@ def load_column(path: Path, column: str) -> tuple[list[float], list[tuple[int, s
     rejected = []
     with path.open("r", newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
+        if reader.fieldnames is None or column not in reader.fieldnames:
+            raise ValueError(f"column '{column}' not found in {path.name}")
         for row_number, row in enumerate(reader, start=1):
             raw = row[column]
-            try:
-                number = float(raw)
-            except ValueError:
+            if rejection_reason(raw) is not None:
                 rejected.append((row_number, raw))
                 continue
-            if not math.isfinite(number) or number < 0:
-                rejected.append((row_number, raw))
-                continue
-            valid_values.append(number)
-    return valid_values, rejected        
-        
-    
+            valid_values.append(float(raw))
+    return valid_values, rejected
+
+
 
 
 def mean(values: list[float]) -> float:
     if len(values) == 0:
-        raise ValueError("mean() needs as least one value")
+        raise ValueError("mean() needs at least one value")
     return sum(values) / len(values)
-    
+
 
 
 def median(values: list[float]) -> float:
@@ -51,7 +66,7 @@ def median(values: list[float]) -> float:
     middle = count // 2
     if count % 2 == 1:
         return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / 2 
+    return (ordered[middle - 1] + ordered[middle]) / 2
 
 
 def mode(values: list[float]) -> list[float]:
@@ -63,7 +78,7 @@ def mode(values: list[float]) -> list[float]:
         counts[value] = counts.get(value, 0) + 1
     highest = max(counts.values())
     if highest == 1:
-        return[]
+        return []
     return sorted(value for value, count in counts.items() if count == highest)
 
 
@@ -75,9 +90,9 @@ def variance(values: list[float], sample: bool = True) -> float:
     if sample and count < 2:
         raise ValueError("sample variance needs at least two values")
     average = sum(values) / count
-    squared_distances = sum((value - average) **2 for value in values)
+    squared_distances = sum((value - average) ** 2 for value in values)
     if sample:
-        return squared_distances / (count -1)
+        return squared_distances / (count - 1)
 
     return squared_distances / count
 
@@ -86,8 +101,7 @@ def std_dev(values: list[float], sample: bool = True) -> float:
     return math.sqrt(variance(values, sample))
 
 def _percentile(ordered: list[float], fraction: float) -> float:
-
-    """"Value at this fraction of the way up a sorted list(linear interpolation)."""
+    """Vsalue at this fraction of the way up a sorted list (linear interpolation)."""
     position = (len(ordered)-1)* fraction
     below = math.floor(position)
     above = math.ceil(position)
@@ -113,7 +127,7 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> dict:
         raise ValueError("k must not be negative")
     q1, _q2, q3 = quartiles(values)
     iqr = q3 - q1
-    lower = q1 -k * iqr
+    lower = q1 - k * iqr
     upper = q3 + k * iqr
     outliers = [value for value in values if value < lower or value > upper]
     return {
@@ -124,8 +138,11 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> dict:
         "upper_fence": upper,
         "outliers": outliers,
     }
+
+
 def money(number):
-        return "n/a" if number is None else f"{number:,.2f}"
+    return "n/a" if number is None else f"{number:,.2f}"
+
 
 class StatisticsAnalyzer:
     """Wraps one numeric column and exposes every statistic above as a method."""
@@ -133,13 +150,15 @@ class StatisticsAnalyzer:
     def __init__(self, values: list[float], name: str = "values") -> None:
         if len(values) == 0:
             raise ValueError("StatisticsAnalyzer needs at least one valid value")
-        self.name = name 
+        self.name = name
         self.values = list(values)
         self.sorted_values = sorted(values)
         self.rejected = []
         self.rows_read = len(values)
         self.source_path = None
-
+        self.reasons = {}
+        self.labels = {}
+        self._summary = None
 
 
     @classmethod
@@ -147,11 +166,18 @@ class StatisticsAnalyzer:
         values, rejected = load_column(path, column)
         analyzer = cls(values, name=column)
         analyzer.rejected = rejected
-        analyzer.rows_read = len(values) + len (rejected)
+        analyzer.reasons = {row_number: rejection_reason(raw) for row_number, raw in rejected}
+        with path.open("r", newline="",encoding="utf-8") as file:
+            for row in csv.DictReader(file):
+                if rejection_reason(row[column]) is None:
+                    analyzer.labels[float(row[column])] = "(" + row["date"] + ", " + row["agent_id"] + ")"
+        analyzer.rows_read = len(values) + len(rejected)
         analyzer.source_path = path
         return analyzer
 
     def summary(self) -> dict:
+        if self._summary is not None:
+            return self._summary
         data = self.sorted_values
         q1 = _percentile(data, 0.25)
         q3 = _percentile(data, 0.75)
@@ -159,7 +185,7 @@ class StatisticsAnalyzer:
         lower = q1 - 1.5 * iqr
         upper = q3 + 1.5 * iqr
         enough = len(data) >= 2
-        return {
+        self._summmary = {
             "count": len(data),
             "mean": mean(data),
             "median": _percentile(data, 0.5),
@@ -176,28 +202,27 @@ class StatisticsAnalyzer:
             "outliers": [value for value in self.values if value < lower or value > upper],
 
         }
+        return self._summmary
 
     def without_outliers(self) -> "StatisticsAnalyzer":
         s = self.summary()
         kept = [v for v in self.values if s["lower_fence"] <= v <= s["upper_fence"]]
-        return StatisticsAnalyzer (kept, name=self.name + " (outliers removed)")
-        
+        cleaned = StatisticsAnalyzer(kept, name=self.name + " (out;oers removed)")
+        cleaned.labels = self.labels
+        return cleaned
+
 
     def report(self) -> str:
         a = self.summary()
         b = self.without_outliers().summary()
-        reasons = {
-            "": "missing value",
-              "-": "placeholder, not a number", 
-              "n/a": "placeholder, not a number"
-        }
+
         lines = []
-        lines.append(f"=== Statistics report: {self.name }===")
+        lines.append(f"=== Statistics report: {self.name } ===")
         lines.append(f"Rows read             : {self.rows_read}")
         lines.append(f"Valid Values          : {a['count']}")
         lines.append(f"Rejected values       : {len(self.rejected)}")
         for row_number, raw in self.rejected:
-            reason = reasons.get(raw.strip().lower(), "not a valid number")
+            reason = self.reasons.get(row_number, "not a valid number")
             lines.append(f"  row {row_number}: '{raw}' ({reason})")
         lines.append("")
         lines.append(f"{'':<20}{'all data' :<26}outliers removed")
@@ -222,7 +247,7 @@ class StatisticsAnalyzer:
                         f"{money(a['q1'])} / {money(a['q3'])}",
                         f"{money(b['q1'])} / {money(b['q3'])}",
                     ),
-                    ("IQR", money(a["iqr"]), money (b["iqr"])),         
+                    ("IQR", money(a["iqr"]), money(b["iqr"])),
                 ]
         for label, left, right in rows:
             lines.append(f"{label:<20}{left:<26}{right}")
@@ -233,22 +258,23 @@ class StatisticsAnalyzer:
                 try:
                     found[float(row["daily_deposits_kes"])] = "(" + row["date"] + ", " + row["agent_id"] + ")"
                 except ValueError:
-                    pass 
-                    
+                    pass
+
         outlier_text = []
         for value in a["outliers"]:
-            outlier_text.append(money(value) + found.get(value, ""))
+            label = self.labels.get(value)
+            outlier_text.append(money(value) + (" " + label if label else ""))
 
         lines.append("")
-        lines.append(f"Outlier fences   :lower {money(a['lower_fence'])}, upper {money(a['upper_fence'])}")
-        lines.append("Outliers    :" + (", ".join(outlier_text) or "none"))           
+        lines.append(f"Outlier fences     :lower {money(a['lower_fence'])}, upper {money(a['upper_fence'])}")
+        lines.append("Outliers       :" + (", ".join(outlier_text) or "none"))
 
         return "\n".join(lines)
 
 
 def compare_with_numpy(analyzer: StatisticsAnalyzer) -> dict[str, bool]:
     """Import numpy HERE, recompute each statistic and return {name: matches}."""
-    import numpy as np 
+    import numpy as np
     data = np.array(analyzer.values)
     s = analyzer.summary()
     q1, q3 = np.percentile(data, [25, 75], method="linear")
@@ -258,11 +284,13 @@ def compare_with_numpy(analyzer: StatisticsAnalyzer) -> dict[str, bool]:
         "variance": math.isclose(s["variance"], np.var(data, ddof=1)),
         "std dev": math.isclose(s["std_dev"], np.std(data, ddof=1)),
         "Q1 / Q3": math.isclose(s["q1"], q1) and math.isclose(s["q3"], q3),
-                                
+
     }
 
 
 if __name__ == "__main__":
+    import subprocess
+    import sys
     values, rejected = load_column(DATA_PATH, "daily_deposits_kes")
     print("valid:", len(values))
     print("Rejected:", rejected)
@@ -298,17 +326,28 @@ if __name__ == "__main__":
     cleaned = analyzer.without_outliers()
     print("cleaned count:", cleaned.summary()["count"])
     print("original count still:", analyzer.summary()["count"])
-    report_text = analyzer.report()
+    results = compare_with_numpy(analyzer)
+    test_run = subprocess.run([sys.executable, "-m", "unittest"], capture_output=True, text=True)
+    ran = next((line for line in test_run.stderr.splitlines() if line.startswith("Ran ")), "tests did not run")
+
+
+    extra = ["", "NumPy verification"]
+    for name, matches in results.items():
+        extra.append(f" {name:<10}: {'MATCH' if matches else 'MISMATCH'}")
+    extra.append("")
+    extra.append("Unit tests")
+    extra.append(f" {'PASSED' if test_run.returncode == 0 else 'FAILED'} ({ran})")
+    extra.append("")
+    extra.append("Note for the risk team")
+    extra.append("  Four outliers push the mean up to 22,400.00, while the median stays at 18,805.47.")
+    extra.append("  Three of the four outliers come from agent AG-104.")
+    extra.append("  Check AG-104's deposits first, and use the median to judge a normal day.")
+
+    report_text = analyzer.report() + "\n" + "\n".join(extra)
     print(report_text)
+
 
     output_path = Path("output") / "stats_report.txt"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report_text, encoding="utf-8")
-    
-
-    results = compare_with_numpy(analyzer)
-
-
-    for name, matches in results.items():
-        print(name, "MATCH" if matches else "MISMATCH")
     print(f"Report saved to {output_path}")
